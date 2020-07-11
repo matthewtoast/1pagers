@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+    <!-- Copyright 2020 Matthew Trost - ISC License -->
+    <head>
+        <meta charset="utf8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+        <title>Workout Timer</title>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.css">
+        <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.19/lodash.js"></script>
+        <script crossorigin src="https://unpkg.com/react@16.7.0/umd/react.development.js"></script>
+        <script crossorigin src="https://cdn.jsdelivr.net/npm/emotion@9.2.12/dist/emotion.umd.min.js"></script>
+        <script crossorigin src="https://unpkg.com/react-dom@16.7.0/umd/react-dom.development.js"></script>
+        <script crossorigin src="https://unpkg.com/prop-types@15.5.10/prop-types.js"></script>
+        <script crossorigin src="https://unpkg.com/react-input-autosize@2.2.1/dist/react-input-autosize.js"></script>
+        <script crossorigin src="https://unpkg.com/react-select@2.1.2/dist/react-select.js"></script>
+        <script src="./shared.js"></script>
+        <style>
+            label {
+                display: block;
+                font-weight: bold;
+            }
+            input, select, button {
+                margin-bottom: 20px;
+                width: 100%;
+            }
+            #react-select-2-input {
+                /* Fixes the CDN-related height glitch at the expense of making the text input invisible */
+                height: 0px;
+            }
+        </style>
+    </head>
+<body>
+    <div id="top">
+        <div id="root" class="container"></div>
+    </div>
+    <script>
+        let value = 0;
+        function opt(label) {
+            return {value: (value++).toString(), label};
+        }
+
+        const EXERCISE_OPTIONS = [
+            opt('1-Arm Row'),
+            opt('Ab Crunch'),
+            opt('Belgian Squat'),
+            opt('Burpee'),
+            opt('Calf Raise'),
+            opt('Chest Press'),
+            opt('Chin-Up'),
+            opt('Curtsy Lunge'),
+            opt('Dead Lift'),
+            opt('Fly Press'),
+            opt('Forward Lunge'),
+            opt('Front Overhead Press'),
+            opt('Front Squat'),
+            opt('Half Burpee'),
+            opt('Incline Press'),
+            opt('J.P.M.'),
+            opt('Jumping Jack'),
+            opt('Lateral Raise'),
+            opt('Lateral Slide'),
+            opt('Mountain Climber'),
+            opt('Pendulum Lunge'),
+            opt('Plank'),
+            opt('Pull-Apart'),
+            opt('Pull-Up'),
+            opt('Push-Up'),
+            opt('Rear Fly'),
+            opt('Renegade Row'),
+            opt('Reverse Lunge'),
+            opt('Run'),
+            opt('Scissor Kick (Horizontal)'),
+            opt('Scissor Kick (Vertical)'),
+            opt('Side Lunge'),
+            opt('Side-Lying Leg Raise'),
+            opt('Sit-Up'),
+            opt('Spiderman Plank'),
+            opt('Squat Hold'),
+            opt('Squeeze Press'),
+            opt('Step-Up'),
+            opt('Sumo Squat'),
+            opt('Triangle Push-Up'),
+            opt('Tricep Dip'),
+            opt('Wall Sit'),
+            opt('Weighted Push-Up'),
+        ];
+
+        // const PRESETS = [
+        //     {label: 'Leg Day', state: { 
+        //         seconds_per_set: 45,
+        //         seconds_per_rest: 60,
+        //         sets_per_exercise: 3,
+        //         selected_exercises: [
+        //             'Forward Lunge',
+        //             'Front Squat',
+        //             'Sumo Squat',
+        //             'Scissor Kick (Vertical)',
+        //             'Side-Lying Leg Raise',
+        //             'Calf Raise',
+        //         ],
+        //     }},
+        // ];
+
+        const SECS_TO_START = 5;
+        const SECS_TO_PREP = 5;
+        const STATES_TO_EXCLUDE_FROM_QUERY_PARAMS = [
+            'exercise_idx',
+            'secs_elapsed',
+            'status',
+        ];
+
+        class Main extends React.Component {
+            constructor (props) {
+                super(props);
+                const {query = "{}"} = qps();
+                this.state = {
+                    voice_idx: 0,
+                    voice_rate: 1,
+                    voice_pitch: 1,
+                    voice_volume: 1,
+                    exercise_idx: -1,
+                    secs_elapsed: -1,
+                    seconds_per_set: 20,
+                    seconds_per_rest: 10,
+                    sets_per_exercise: 8,
+                    do_beep: true,
+                    selected_exercises: [],
+                    status: 'rest',
+                    ...JSON.parse(query),
+                };
+            }
+
+            updateState (state, cb) {
+                this.setState(state, () => {
+                    const query = JSON.stringify(_.omit(this.state, STATES_TO_EXCLUDE_FROM_QUERY_PARAMS));
+                    uqp({query});
+                    if (cb) {
+                        cb();
+                    }
+                });
+            }
+
+            loop () {
+                let {secs_elapsed} = this.state;
+                this.interval = setInterval(() => {
+                    secs_elapsed += 1;
+                    this.updateState({secs_elapsed}, () => {
+                        this.tick();
+                    });
+                }, 1000);
+            }
+
+            compute () {
+                const {secs_elapsed, seconds_per_rest, seconds_per_set, sets_per_exercise, exercise_idx, do_beep, selected_exercises} = this.state;
+                const workout_duration = ((selected_exercises.length * sets_per_exercise) * (seconds_per_set + seconds_per_rest)) - seconds_per_rest;
+                const seg_duration = seconds_per_rest + seconds_per_set;
+                const exercise_duration = seg_duration * sets_per_exercise;
+                const secs_of_seg = secs_elapsed % seg_duration;
+                const secs_of_exercise = secs_elapsed % exercise_duration;
+                const minutes_elapsed = Math.floor(Math.max(secs_elapsed, 0) / 60);
+                const seconds_of_minute = Math.max(secs_elapsed, 0) % 60;
+                const pc_of_exercise = Math.min(Math.max((secs_of_exercise + 1) / (exercise_duration - seconds_per_rest), 0), 1);
+                const pc_of_workout = Math.min(Math.max((secs_elapsed + 1) / workout_duration, 0), 1);
+                return {
+                    secs_elapsed,
+                    seconds_per_rest,
+                    seconds_per_set,
+                    sets_per_exercise,
+                    exercise_idx,
+                    do_beep,
+                    workout_duration,
+                    seg_duration,
+                    exercise_duration,
+                    secs_of_seg,
+                    secs_of_exercise,
+                    minutes_elapsed,
+                    seconds_of_minute,
+                    workout_duration,
+                    pc_of_exercise,
+                    pc_of_workout,
+                    selected_exercises,
+                };
+            }
+
+            tick () {
+                const {
+                    secs_elapsed,
+                    seconds_per_rest,
+                    seconds_per_set,
+                    sets_per_exercise,
+                    exercise_idx,
+                    do_beep,
+                    workout_duration,
+                    seg_duration,
+                    exercise_duration,
+                    secs_of_seg,
+                    secs_of_exercise,
+                } = this.compute();
+
+                if (do_beep) {
+                    beep();
+                }
+
+                // End of workout
+                if (secs_elapsed >= workout_duration - 1) {
+                    this.reset_workout();
+                    this.speak(`Workout complete`);
+                    return;
+                }
+
+                // Start of workout
+                if (secs_elapsed === 0) {
+                    this.speak(`${this.current_exercise()} ${seconds_per_set} seconds`);
+                    return;
+                }
+
+                // End of set
+                if (seconds_per_rest > 0 && secs_of_seg === seg_duration - seconds_per_rest - 1) {
+                    this.speak(`Rest ${seconds_per_rest} seconds`);
+                    this.updateState({status: 'rest'});
+                    return;
+                }
+
+                if (secs_of_exercise === exercise_duration - SECS_TO_PREP) {
+                    const next_exercise = this.next_exercise();
+                    if (next_exercise) {
+                        this.speak(`Prepare for ${next_exercise}`);
+                    }                
+                    return;
+                }
+
+                // Halfway through rest
+                if (seconds_per_rest > SECS_TO_PREP && secs_of_seg === seg_duration - SECS_TO_PREP) {
+                    const current_exercise = this.current_exercise();
+                    if (current_exercise) {
+                        this.speak(`Prepare for ${current_exercise}`);
+                    }
+                    return;
+                }
+
+                if (secs_of_exercise === exercise_duration - 1) {
+                    this.updateState({exercise_idx: exercise_idx + 1}, () => {
+                        const current_exercise = this.current_exercise();
+                        if (current_exercise) {
+                            this.speak(`${this.current_exercise()} ${seconds_per_set} seconds`);
+                            this.updateState({status: 'work'});
+                        }
+                    });
+                    return;
+                }
+
+                // End of rest
+                if (secs_of_seg === seg_duration - 1) {
+                    const current_exercise = this.current_exercise();
+                    if (current_exercise) {
+                        this.speak(`${this.current_exercise()} ${seconds_per_set} seconds`);
+                        this.updateState({status: 'work'});
+                    }
+                    return;
+                }
+            }
+
+            current_exercise () {
+                const obj = this.state.selected_exercises[this.state.exercise_idx];
+                return obj && obj.label || '';
+            }
+
+            next_exercise () {
+                const obj = this.state.selected_exercises[this.state.exercise_idx + 1];
+                return obj && obj.label || '';
+            }
+
+            current_voice () {
+                const voices = window.speechSynthesis.getVoices();
+                return voices && voices[this.state.voice_idx];
+            }
+
+            speak (text) {
+                say(text, {
+                    voice: this.current_voice(),
+                    rate: this.state.voice_rate,
+                    pitch: this.state.voice_pitch,
+                    volume: this.state.voice_volume,
+                });
+            }
+
+            start_workout () {
+                if (this.starting) {
+                    return;
+                }
+                this.starting = true;
+                this.forceUpdate(() => {
+                    this.speak(`Starting in ${SECS_TO_START} seconds`);
+                    setTimeout(() => {
+                        this.starting = false;
+                        const exercise_idx = Math.max(this.state.exercise_idx, 0);
+                        this.updateState({status: 'work', exercise_idx}, () => {
+                            this.loop();
+                        });
+                    }, SECS_TO_START * 1000);
+                });
+            };
+
+            pause_workout () {
+                clearInterval(this.interval);
+                this.interval = null;
+                this.updateState({status: 'rest'});
+            };
+
+            reset_workout () {
+                this.pause_workout();
+                this.updateState({secs_elapsed: -1, exercise_idx: -1});
+            };
+
+            render () {
+                const {
+                    workout_duration,
+                    seconds_per_set,
+                    seconds_per_rest,
+                    sets_per_exercise,
+                    selected_exercises,
+                    minutes_elapsed,
+                    seconds_of_minute,
+                    pc_of_exercise,
+                    pc_of_workout,
+                } = this.compute();
+
+                const {status} = this.state;
+
+                return el(React.Fragment, null,
+                    el('div', {className: 'row'},
+                        el('div', {className: 'col-sm-12'},
+                            el('a', {href: window.location.pathname},
+                                el('h1', {style: {marginBottom: 40}}, 'Workout Timer'),
+                            ),
+                        ),
+                    ),
+                    el('div', {className: 'row'},
+                        el('div', {className: 'col-md-4'},
+                            el('label', null, 'Current Exercise'),
+                            el('p', {style: {fontSize: '64px', lineHeight: '1.2em', color: status === 'rest' ? 'gray' : 'black'}}, this.current_exercise() || '-'),
+                            el('label', null, 'Next Exercise'),
+                            el('p', null, this.next_exercise() || '-'),
+                            el('br'),
+                            el('label', null, `Exercise progress (${Math.round(pc_of_exercise * 100)}%)`),
+                            el('div', {style: {width: '100%', height: 50, border: '1px solid orange', borderRadius: 2}},
+                                el('div', {style: {width: `${pc_of_exercise * 100}%`, height: '100%', backgroundColor: 'orange'}}),
+                            ),
+                            el('br'),
+                            el('label', null, `Workout progress (${Math.round(pc_of_workout * 100)}%)`),
+                            el('div', {style: {width: '100%', height: 50, border: '1px solid blue', borderRadius: 2}},
+                                el('div', {style: {width: `${pc_of_workout * 100}%`, height: '100%', backgroundColor: 'blue'}}),
+                            ),
+                            el('br'), el('br'),
+                        ),
+                        el('div', {className: 'col-md-4'},
+                            el('label', null, 'Set Duration (Seconds)'),
+                            el('input', {type: 'number', min: 5, value: seconds_per_set, onChange: ({target: {value: seconds_per_set}}) => {
+                                this.updateState({seconds_per_set: parseInt(seconds_per_set)});
+                            }}),
+                            el('label', null, 'Rest Duration (Seconds)'),
+                            el('input', {type: 'number', min: 0, value: seconds_per_rest, onChange: ({target: {value: seconds_per_rest}}) => {
+                                this.updateState({seconds_per_rest: parseInt(seconds_per_rest)});
+                            }}),
+                            el('label', null, 'Sets Per Exercise'),
+                            el('input', {type: 'number', min: 1, value: sets_per_exercise, onChange: ({target: {value: sets_per_exercise}}) => {
+                                this.updateState({sets_per_exercise: parseInt(sets_per_exercise)});
+                            }}),
+                            el('label', null, 'Total Workout Length'),
+                            el('p', null,
+                                `${Math.ceil(workout_duration / 60)} minutes`,
+                            ),
+                            el('br'),
+                            el('button', {className: 'btn btn-success', onClick: () => this.start_workout(), disabled: !!this.interval || this.starting}, 'Start Workout'),
+                            el('button', {className: 'btn btn-danger', onClick: () => this.pause_workout(), disabled: !this.interval || this.starting}, 'Pause Workout'),
+                            el('button', {className: 'btn btn-dark', onClick: () => this.reset_workout(), disabled: this.starting}, 'Reset Workout'),
+                            el('br'), el('br'),
+                        ),
+                        el('div', {className: 'col-md-4'},
+                            el('label', null, 'Exercises'),
+                            el(Select, {isMulti: true, options: EXERCISE_OPTIONS, value: selected_exercises, onChange: (selected_exercises = []) => {
+                                this.updateState({selected_exercises});
+                            }}),
+                            el('br'), el('br'),
+                        ),
+                    ),
+                    el('div', {className: 'row'},
+                        el('div', {className: 'col-sm-12'},
+                            el('p', null, 'Copyright 2020 Matthew Trost'),
+                            el('br'), el('br'),
+                        ),
+                    ),
+                );
+            }
+        }
+
+        ReactDOM.render(el(Main), document.getElementById('root'));
+    </script>
+</body>
+</html>
