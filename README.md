@@ -2,7 +2,11 @@
 
 A collection of web-based, self-contained "apps" implemented as standalone HTML pages that work offline.
 
-### Constraints
+### Table of Contents
+
+- **[Workout Timer](/workout-timer.html)** A simple timer for guiding you through timed Tabata-style workouts. Your computer's voice will announce each exercise and each rest.
+
+### Development Constraints
 
 - Each "app" is a single `.html` file
 - Just vanilla HTML, CSS and JavaScript

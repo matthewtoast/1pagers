@@ -85,6 +85,7 @@
             opt('Wall Sit'),
             opt('Weighted Push-Up'),
         ];
+        console.log(EXERCISE_OPTIONS);
 
         // const PRESETS = [
         //     {label: 'Leg Day', state: { 
@@ -116,7 +117,7 @@
                 const {query = "{}"} = qps();
                 this.state = {
                     voice_idx: 0,
-                    voice_rate: 1,
+                    voice_rate: 1.2,
                     voice_pitch: 1,
                     voice_volume: 1,
                     exercise_idx: -1,
@@ -125,7 +126,11 @@
                     seconds_per_rest: 10,
                     sets_per_exercise: 8,
                     do_beep: true,
-                    selected_exercises: [],
+                    selected_exercises: [
+                        {value: "3", label: "Burpee"},
+                        {value: "38", label: "Sumo Squat"},
+                        {value: "19", label: "Mountain Climber"},
+                    ],
                     status: 'rest',
                     ...JSON.parse(query),
                 };
@@ -161,7 +166,7 @@
                 const minutes_elapsed = Math.floor(Math.max(secs_elapsed, 0) / 60);
                 const seconds_of_minute = Math.max(secs_elapsed, 0) % 60;
                 const pc_of_exercise = Math.min(Math.max((secs_of_exercise + 1) / (exercise_duration - seconds_per_rest), 0), 1);
-                const pc_of_workout = Math.min(Math.max((secs_elapsed + 1) / workout_duration, 0), 1);
+                const pc_of_workout = Math.min(Math.max((secs_elapsed + 1) / workout_duration, 0), 1) || 0;
                 return {
                     secs_elapsed,
                     seconds_per_rest,
@@ -372,7 +377,7 @@
                                 `${Math.ceil(workout_duration / 60)} minutes`,
                             ),
                             el('br'),
-                            el('button', {className: 'btn btn-success', onClick: () => this.start_workout(), disabled: !!this.interval || this.starting}, 'Start Workout'),
+                            el('button', {className: 'btn btn-success', onClick: () => this.start_workout(), disabled: selected_exercises.length < 1 || !!this.interval || this.starting}, 'Start Workout'),
                             el('button', {className: 'btn btn-danger', onClick: () => this.pause_workout(), disabled: !this.interval || this.starting}, 'Pause Workout'),
                             el('button', {className: 'btn btn-dark', onClick: () => this.reset_workout(), disabled: this.starting}, 'Reset Workout'),
                             el('br'), el('br'),
